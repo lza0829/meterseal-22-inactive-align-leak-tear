@@ -32,12 +32,11 @@ async function seal() {
     await refresh()
   } catch (e) { err.value = e.message }
 }
-onMounted(refresh)
-</script>
+onMounted(refresh)</script>
 <template>
   <div>
     <h1>账期封印</h1>
-    <p class="sub">封印后该期估抄、实抄禁止再写；含停用表表键的对账批不得封印</p>
+    <p class="sub">封印后该期估抄、实抄禁止再写；批内表键或批内差额挂到停用表的，一律不得封印</p>
     <div class="row">
       <label>账期<input v-model="periodId" @change="refresh" /></label>
       <label>对账批<input v-model="batchId" @change="loadBatchInfo" placeholder="可空取最新开放批" /></label>

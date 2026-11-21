@@ -1,10 +1,9 @@
-from app.services import align_scope
 from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.db import connect
-from app.services import reconcile_service
+from app.services import align_scope, reconcile_service
 
 router = APIRouter(tags=["reconcile"])
 
@@ -105,13 +104,16 @@ def periods():
 
 @router.get("/active-scope")
 def active_scope(period_id: str):
+    """可对齐键与总览活跃数同源：停用键不出现在 align_meter_ids。"""
     conn = connect()
     try:
-        ids = align_scope.meter_ids_for_align(conn, period_id)
+        keys, excluded = align_scope.scope_keys(conn, period_id)
         return {
             "period_id": period_id,
-            "align_meter_ids": ids,
-            "align_count": len(ids),
+            "align_meter_ids": keys,
+            "align_count": len(keys),
+            "excluded_inactive_meter_ids": excluded,
+            "excluded_inactive_count": len(excluded),
             "active_count": align_scope.overview_active_count(conn),
         }
     finally:

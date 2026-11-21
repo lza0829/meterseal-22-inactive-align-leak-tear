@@ -92,7 +92,8 @@ def _migrate(conn) -> None:
                 conn.execute(stmt)
             except Exception:
                 pass
-    # 旧批没有表键快照：只对「完全没有快照」的批按当时的估抄/实抄补一次。
+    # 旧批没有表键快照：只对「完全没有快照」的批按当时的估抄/实抄补一次，
+    # 且只补在用表——停用键不得借迁移复活进任何批。
     # 不能每次启动重算，否则会把对齐时已排除的停用表键重新塞回新批。
     conn.execute(
         """INSERT OR IGNORE INTO reconcile_batch_meters(batch_id, meter_id)
@@ -101,10 +102,47 @@ def _migrate(conn) -> None:
              SELECT period_id, meter_id FROM estimates
              UNION SELECT period_id, meter_id FROM actuals
            ) u ON u.period_id = b.period_id
+           JOIN meters mt ON mt.meter_id = u.meter_id AND mt.status='active'
            WHERE NOT EXISTS (
              SELECT 1 FROM reconcile_batch_meters s WHERE s.batch_id = b.batch_id
            )"""
     )
+    # 修复历史脏状态：open 批的「表键快照」或「差额挂的表键」含停用表即强制失效，
+    # 其未决差额转隔离。让「含停用键的 open 批不得存在」成为启动后恒成立的不变量。
+    dirty = conn.execute(
+        """SELECT DISTINCT b.batch_id FROM reconcile_batches b
+           WHERE b.status='open' AND (
+             EXISTS (
+               SELECT 1 FROM reconcile_batch_meters m
+               JOIN meters mt ON mt.meter_id=m.meter_id
+               WHERE m.batch_id=b.batch_id AND mt.status<>'active'
+             )
+             OR EXISTS (
+               SELECT 1 FROM variances v
+               JOIN meters mt ON mt.meter_id=v.meter_id
+               WHERE v.batch_id=b.batch_id AND mt.status<>'active'
+             )
+           )"""
+    ).fetchall()
+    for r in dirty:
+        bid = r["batch_id"]
+        conn.execute(
+            "UPDATE reconcile_batches SET status='expired' WHERE batch_id=?", (bid,)
+        )
+        conn.execute(
+            """UPDATE variances SET fate='quarantine'
+               WHERE batch_id=? AND fate='pending'
+                 AND meter_id IN (
+                   SELECT meter_id FROM meters WHERE status<>'active'
+                 )""",
+            (bid,),
+        )
+        conn.execute(
+            """INSERT INTO audit_log(at,actor,action,batch_id,detail)
+               VALUES (datetime('now'),'system','batch.expired',?,
+                       '启动迁移：含停用表键的开放批强制失效')""",
+            (bid,),
+        )
     conn.commit()
 
 

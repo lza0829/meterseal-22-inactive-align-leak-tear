@@ -22,6 +22,8 @@ onMounted(async () => {
       <div class="stat">开放账期<b>{{ data.open_periods }}</b></div>
       <div class="stat">已封印账期<b>{{ data.sealed_periods }}</b></div>
       <div class="stat">表具数<b>{{ data.meter_count }}</b></div>
+      <div class="stat">在用表<b>{{ data.active_meter_count }}</b></div>
+      <div class="stat">可对齐表<b>{{ data.alignable_meter_count }}</b></div>
       <div class="stat">停用表<b>{{ data.inactive_meter_count }}</b></div>
       <div class="stat">未决差额<b>{{ data.pending_variances }}</b></div>
     </div>

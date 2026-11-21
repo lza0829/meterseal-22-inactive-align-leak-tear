@@ -10,9 +10,15 @@ router = APIRouter(tags=["dashboard"])
 
 @router.get("/health")
 def health():
-    active_n = align_scope.overview_active_count(conn)
+    conn = connect()
+    try:
         return {
-            "active_meter_count": active_n,"ok": True, "product": "抄表簿"}
+            "active_meter_count": align_scope.overview_active_count(conn),
+            "ok": True,
+            "product": "抄表簿",
+        }
+    finally:
+        conn.close()
 
 
 @router.get("/overview")
@@ -26,12 +32,9 @@ def overview():
             "SELECT COUNT(*) AS c FROM periods WHERE status='sealed'"
         ).fetchone()["c"]
         meters = conn.execute("SELECT COUNT(*) AS c FROM meters").fetchone()["c"]
-        active_meters = conn.execute(
-            "SELECT COUNT(*) AS c FROM meters WHERE status='active'"
-        ).fetchone()["c"]
-        inactive_meters = conn.execute(
-            "SELECT COUNT(*) AS c FROM meters WHERE status<>'active'"
-        ).fetchone()["c"]
+        # 活跃/停用计数与可对齐键同源（align_scope），避免总览与对齐各一套。
+        active_meters = align_scope.overview_active_count(conn)
+        inactive_meters = align_scope.overview_inactive_count(conn)
         inactive_list = [
             dict(r)
             for r in conn.execute(
@@ -39,10 +42,13 @@ def overview():
                 "WHERE status<>'active' ORDER BY meter_id"
             ).fetchall()
         ]
+        current = get_setting("current_period", "")
+        alignable = (
+            align_scope.meter_ids_for_align(conn, current) if current else []
+        )
         pending = conn.execute(
             "SELECT COUNT(*) AS c FROM variances WHERE fate='pending'"
         ).fetchone()["c"]
-        current = get_setting("current_period", "")
         batches = [
             dict(r)
             for r in conn.execute(
@@ -57,6 +63,8 @@ def overview():
             "active_meter_count": active_meters,
             "inactive_meter_count": inactive_meters,
             "inactive_meters": inactive_list,
+            "alignable_meter_count": len(alignable),
+            "alignable_meter_ids": alignable,
             "pending_variances": pending,
             "recent_batches": batches,
         }

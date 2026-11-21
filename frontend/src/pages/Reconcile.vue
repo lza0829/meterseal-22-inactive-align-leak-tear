@@ -54,6 +54,10 @@ onMounted(async () => {
           · 已作废：含停用表的旧批不可封印，需恢复在用后重新对齐
         </template>
       </p>
+      <p
+        v-if="vars.some(v => v.fate === 'quarantine')"
+        class="msg ok"
+      >隔离差额只作留痕，不计入正式处置，也不得改回认短/认溢</p>
       <table>
         <thead><tr><th>差额编号</th><th>表号</th><th>估抄</th><th>实抄</th><th>差值</th><th>命运</th><th>处置</th></tr></thead>
         <tbody>
@@ -65,8 +69,16 @@ onMounted(async () => {
             <td>{{ v.delta }}</td>
             <td>{{ 标(命运, v.fate) }}</td>
             <td>
-              <button class="secondary" @click="fate(v.variance_id, 'accept_short')">认短</button>
-              <button class="secondary" @click="fate(v.variance_id, 'accept_over')">认溢</button>
+              <button
+                class="secondary"
+                :disabled="v.fate === 'quarantine'"
+                @click="fate(v.variance_id, 'accept_short')"
+              >认短</button>
+              <button
+                class="secondary"
+                :disabled="v.fate === 'quarantine'"
+                @click="fate(v.variance_id, 'accept_over')"
+              >认溢</button>
               <button class="warn" @click="fate(v.variance_id, 'quarantine')">隔离</button>
             </td>
           </tr>

@@ -16,8 +16,10 @@ async function toggle(m) {
     const r = await api.setMeterStatus(m.meter_id, next)
     if (!r.changed) msg.value = `${m.meter_id} 状态未变化`
     else if (next === 'inactive') {
-      msg.value = `${m.meter_id} 已停用：装载将拒写该表` +
-        (r.expired_batch_ids.length ? `，作废开放批 ${r.expired_batch_ids.join('、')}` : '')
+      const q = r.quarantined_variance_ids || []
+      msg.value = `${m.meter_id} 已停用：装载拒写、退出对齐范围` +
+        (r.expired_batch_ids.length ? `，作废开放批 ${r.expired_batch_ids.join('、')}` : '') +
+        (q.length ? `，未决差额转隔离 ${q.length} 笔` : '')
     } else {
       msg.value = `${m.meter_id} 已恢复在用：可重新对齐出批`
     }

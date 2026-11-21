@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.db import connect
+from app.services import reconcile_service
 from app.services.gate import audit, write_tx
 
 router = APIRouter(tags=["meters"])
@@ -45,30 +46,20 @@ def set_meter_status(meter_id: str, body: MeterStatusIn):
                     "status": before,
                     "changed": False,
                     "expired_batch_ids": [],
+                    "quarantined_variance_ids": [],
                 }
             conn.execute(
                 "UPDATE meters SET status=? WHERE meter_id=?", (body.status, meter_id)
             )
             expired: list[str] = []
+            quarantined: list[str] = []
             if body.status == "inactive":
                 # 只作废「开放」批：已 sealed 批的快照与差额不得因事后停用被改脏。
-                rows = conn.execute(
-                    """SELECT DISTINCT b.batch_id FROM reconcile_batches b
-                       JOIN reconcile_batch_meters m ON m.batch_id=b.batch_id
-                       WHERE m.meter_id=? AND b.status='open'""",
-                    (meter_id,),
-                ).fetchall()
-                expired = [r["batch_id"] for r in rows]
-                if expired:
-                    for bid in expired:
-                        audit(
-                            conn,
-                            body.actor,
-                            "batch.expired",
-                            meter_id=meter_id,
-                            batch_id=bid,
-                            detail="表具停用，作废含该表的开放对账批",
-                        )
+                linked = reconcile_service.deactivate_meter(
+                    conn, meter_id, body.actor
+                )
+                expired = linked["expired_batch_ids"]
+                quarantined = linked["quarantined_variance_ids"]
             audit(
                 conn,
                 body.actor,
@@ -78,6 +69,7 @@ def set_meter_status(meter_id: str, body: MeterStatusIn):
                     f"{before} -> {body.status}"
                     + (f"；note={body.note}" if body.note else "")
                     + (f"；作废批={','.join(expired)}" if expired else "")
+                    + (f"；转隔离差额={len(quarantined)}" if quarantined else "")
                 ),
             )
             return {
@@ -85,6 +77,7 @@ def set_meter_status(meter_id: str, body: MeterStatusIn):
                 "status": body.status,
                 "changed": True,
                 "expired_batch_ids": expired,
+                "quarantined_variance_ids": quarantined,
             }
     finally:
         conn.close()
